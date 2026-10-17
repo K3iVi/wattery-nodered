@@ -1,0 +1,4 @@
+node_modules/
+*.tgz
+__pycache__/
+wattery-edge.json
