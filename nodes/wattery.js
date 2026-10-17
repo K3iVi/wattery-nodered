@@ -41,11 +41,37 @@ module.exports = function register(RED) {
     const kind = config.kind || 'nodered';
     let gx = null;
     let client = null;
-    let timer = null;
+    let loopTimer = null;                               // smyčka synchronizace
+    let gxTimer = null;                                 // znovupřipojení GX — vlastní časovač, smyčka ho nesmí zrušit
+    let ticking = false;
     let closing = false;
+    // Diagnostika (bez tokenu) do globálního kontextu Node-RED — pro podporu a testy odolnosti.
+    const diag = { ver: VERSION, startedAt: Math.floor(Date.now() / 1000), gxConnects: 0, gxLost: 0, lastGxLost: null,
+                   ticks: 0, tickErrors: 0 };
 
     const status = (fill, text) => node.status({ fill, shape: 'dot', text: String(text).slice(0, 60) });
-    const later = (fn, s) => { clearTimeout(timer); if (!closing) timer = setTimeout(fn, s * 1000); };
+
+    function publishDiag() {
+      if (client) {
+        Object.assign(diag, { status: client.status, lastError: client.lastError, lastSyncAt: client.lastSyncAt,
+                              readErrors: client.readErrors });
+      }
+      diag.portal = gx ? gx.portal || null : null;
+      diag.gxConnected = !!(gx && gx.connected);
+      try { node.context().global.set('wattery_diag', diag); } catch (e) { /* bez kontextu (testy) */ }
+    }
+
+    function scheduleLoop(s) {
+      clearTimeout(loopTimer);
+      loopTimer = closing ? null : setTimeout(loop, s * 1000);
+    }
+
+    function scheduleConnect(s) {
+      clearTimeout(loopTimer);
+      loopTimer = null;
+      clearTimeout(gxTimer);
+      gxTimer = closing ? null : setTimeout(connect, s * 1000);
+    }
 
     function onStatus(c) {
       if (c.status === ONLINE) status('green', `čte · ${hhmm(c.lastSyncAt)}${c.lastError ? ' · ' + c.lastError : ''}`);
@@ -54,6 +80,11 @@ module.exports = function register(RED) {
     }
 
     async function loop() {
+      loopTimer = null;
+      // Bez spojení s GX se nečte (smyčku znovu spustí connect); běžící kolo naplánuje další samo.
+      if (ticking || closing || !gx || !gx.connected) return;
+      ticking = true;
+      diag.ticks += 1;
       try {
         await client.tick();
       } catch (e) {
@@ -62,28 +93,42 @@ module.exports = function register(RED) {
           delete st[`${server}|${gx.portal}`];
           saveState(RED, st);
           node.warn('wattery: token neplatí (odpojeno ve wattery) — zadejte nový párovací kód a nasaďte');
+          publishDiag();
           return;
         }
+        diag.tickErrors += 1;
         node.error(`wattery: chyba ve smyčce: ${e.message}`);
+      } finally {
+        ticking = false;
       }
-      later(loop, client.pollS());
+      publishDiag();
+      if (gx && gx.connected) scheduleLoop(client.pollS());
     }
 
     async function connect() {
+      gxTimer = null;
       status('grey', 'připojuji se ke GX…');
-      gx = new GxMqtt({ host, port });
-      gx.on('lost', (err) => {
+      const g = new GxMqtt({ host, port });
+      gx = g;
+      g.on('lost', (err) => {
+        if (gx !== g) return;
+        diag.gxLost += 1;
+        diag.lastGxLost = { at: Math.floor(Date.now() / 1000), msg: String(err.message).slice(0, 100) };
+        node.log(`wattery: spojení s GX ztraceno (${err.message}) — znovu za ${RECONNECT_S} s`);
         status('yellow', `GX: ${err.message} — zkusím znovu`);
-        clearTimeout(timer);
-        later(connect, RECONNECT_S);
+        publishDiag();
+        scheduleConnect(RECONNECT_S);
       });
       try {
-        await gx.start();
+        await g.start();
       } catch (e) {
         status('red', `GX: ${e.message}`);
-        later(connect, RECONNECT_S);
+        publishDiag();
+        scheduleConnect(RECONNECT_S);
         return;
       }
+      diag.gxConnects += 1;
+      if (diag.gxConnects > 1) node.log(`wattery: znovu připojeno ke GX ${g.portal}`);
       const key = `${server}|${gx.portal}`;
       const saved = loadState(RED)[key];
       client = client || new EdgeClient({ post: makePost(server, { userAgent: VERSION }), transport: gx, version: VERSION,
@@ -109,14 +154,16 @@ module.exports = function register(RED) {
         }
       }
       status('green', `GX ${gx.portal} — čtu`);
-      later(loop, 1);
+      publishDiag();
+      scheduleLoop(1);
     }
 
     connect();
 
     node.on('close', (done) => {
       closing = true;
-      clearTimeout(timer);
+      clearTimeout(loopTimer);
+      clearTimeout(gxTimer);
       if (gx) gx.close();
       done();
     });

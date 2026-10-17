@@ -38,6 +38,10 @@ test('GX: zjištění portal ID, odběr, hodnoty, keepalive — a nikdy W/', asy
     assert.throws(() => c._publish(`W/${PORTAL}/settings/0/Settings/DynamicEss/Mode`, '{"value":0}'));
     assert.ok(b.clientTopics.every((t) => t === `R/${PORTAL}/keepalive`), b.clientTopics.join(','));
     assert.ok(!c.filters.includes('../W/x'));
+    b.kick();                                           // restart brokeru → staré hodnoty se nesmí číst jako čerstvé
+    await settle();
+    assert.strictEqual(c.connected, false);
+    assert.throws(() => c.readItem({ type: 'mqtt', name: 'live', paths: ['system/0/Dc/Battery/Soc'] }), /není připojené/);
   } finally {
     c.close();
     await b.stop();

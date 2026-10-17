@@ -15,11 +15,13 @@ const until = async (fn, ms = 5000) => {
 };
 
 function fakeHub() {
-  const hub = { pairs: [], syncs: [], revoke: false };
+  const hub = { pairs: [], syncs: [], revoke: false, delayMs: 0, onSync: null };
   hub.server = http.createServer((req, res) => {
     let body = '';
     req.on('data', (c) => { body += c; });
-    req.on('end', () => {
+    req.on('end', async () => {
+      if (req.url !== '/api/edge/v1/pair' && hub.onSync) hub.onSync();
+      if (hub.delayMs) await new Promise((r) => setTimeout(r, hub.delayMs));
       const b = JSON.parse(body || '{}');
       let code = 200;
       let out;
@@ -39,8 +41,9 @@ function fakeHub() {
 }
 
 function fakeRED(userDir) {
-  const RED = { settings: { userDir }, nodes: {} };
+  const RED = { settings: { userDir }, nodes: {}, global: {} };
   RED.nodes.createNode = (node, config) => {
+    node.context = () => ({ global: { set: (k, v) => { RED.global[k] = v; } } });
     node.statuses = [];
     node.logs = [];
     node.handlers = {};
@@ -86,6 +89,39 @@ test('uzel: párování kódem, čtení, token v userDir, restart bez kódu, odp
     assert.ok(await until(() => n2.statuses.some((s) => s.fill === 'red'), 12000), JSON.stringify(n2.statuses));
     assert.ok(await until(() => !fs.readFileSync(path.join(dir, 'wattery-edge.json'), 'utf8').includes('TOK')));
     await close(n2);
+    assert.ok(gx.clientTopics.every((t) => t === `R/${PORTAL}/keepalive`));
+  } finally {
+    await gx.stop();
+    hub.server.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('uzel: ztráta GX během běžící synchronizace → znovupřipojení, žádná stará data', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wattery-nr-'));
+  const gx = await new FakeGx().start();
+  const hub = await fakeHub();
+  const RED = fakeRED(dir);
+  const cfg = { server: hub.url, host: '127.0.0.1', port: String(gx.port), kind: 'sim', __credentials: { code: 'ABCD-EFGH' } };
+  try {
+    const n = {};
+    RED.type.ctor.call(n, cfg);
+    assert.ok(await until(() => hub.syncs.some((s) => s.body.reads.length), 12000), JSON.stringify(n.statuses));
+    // Další sync visí na serveru a mezitím spadne broker GX (dřív smyčka po návratu zrušila znovupřipojení).
+    hub.delayMs = 1500;
+    let kicked = false;
+    hub.onSync = () => { if (!kicked) { kicked = true; setTimeout(() => gx.kick(), 200); } };
+    assert.ok(await until(() => RED.global.wattery_diag && RED.global.wattery_diag.gxLost >= 1, 12000));
+    hub.delayMs = 0;
+    hub.onSync = null;
+    const lostAt = hub.syncs.length;
+    assert.ok(await until(() => RED.global.wattery_diag.gxConnects >= 2, 15000), JSON.stringify(RED.global.wattery_diag));
+    gx.set('system/0/Dc/Battery/Soc', 61);
+    const fresh = (s) => s.body.reads.some((r) => r.values['system/0/Dc/Battery/Soc'] === 61);
+    assert.ok(await until(() => hub.syncs.slice(lostAt).some(fresh), 15000), 'po znovupřipojení čte nové hodnoty');
+    assert.strictEqual(RED.global.wattery_diag.status, 'online');
+    assert.ok(!JSON.stringify(RED.global.wattery_diag).includes('TOK'), 'diagnostika bez tokenu');
+    await close(n);
     assert.ok(gx.clientTopics.every((t) => t === `R/${PORTAL}/keepalive`));
   } finally {
     await gx.stop();

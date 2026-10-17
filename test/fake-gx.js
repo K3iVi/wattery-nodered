@@ -45,6 +45,11 @@ class FakeGx {
     return new Promise((r) => this.server.close(() => r()));
   }
 
+  /** Restart brokeru (dbus-flashmq): shodí všechna spojení klientů, server dál poslouchá. */
+  kick() {
+    for (const c of this.clients) c.sock.destroy();
+  }
+
   set(path, value) {
     this.tree[path] = value;
     for (const c of this.clients) this._send(c, path);
