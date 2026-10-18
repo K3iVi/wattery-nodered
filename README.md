@@ -1,16 +1,45 @@
 # node-red-contrib-wattery
 
-Lokální spojení **Victron GX** (Cerbo GX, Ekrano GX) s platformou **wattery** — přímo z Node-RED na Venus OS Large.
-Data jdou z Cerba každých pár sekund místo přes VRM. Verze 0.1 **jen čte**, do Cerba nic nezapisuje.
+Lokální spojení **Victron GX** (Cerbo GX, Ekrano GX) s aplikací **[wattery](https://spot.wattery.cz)** — přímo
+z Node-RED na Venus OS Large. Hodnoty jdou z Cerba každých pár sekund po vaší síti, ne přes VRM.
 
-## Instalace (Venus OS Large)
+- **Jen čte.** Do Cerba ani do zařízení Victron nic nezapisuje (verze 0.1).
+- **Nic dalšího nenastavujete:** uzel čte broker MQTT přímo v Cerbu (`localhost`), MQTT v síti ani heslo Cerba
+  nepotřebuje.
+- **Bez závislostí**, malé: Node-RED s uzlem zabere na Cerbu kolem 105 MB paměti.
 
-1. Cerbo: Nastavení → Obecné → Firmware → Online aktualizace → Typ image **Large** → nainstalovat.
-2. Nastavení → Integrace → **Node-RED** → zapnout. Otevřít `https://venus.local:1881` (nebo VRM → Venus OS Large).
-3. Menu → **Spravovat paletu** → Instalovat → hledat `wattery` → Instalovat.
-4. Přetáhnout uzel **wattery** na plochu, vložit párovací kód z aplikace wattery („Připojit lokálně“) → **Nasadit**.
+**Návod s obrázky:** [spot.wattery.cz/navody/pripojeni-victron-cerbo](https://spot.wattery.cz/navody/pripojeni-victron-cerbo)
 
-MQTT v síti ani heslo Cerba zapínat/zadávat není potřeba — uzel čte broker na `localhost`.
+## Instalace
+
+1. **Venus OS Large:** Settings → General → Firmware → Online updates → Image type **Large** → aktualizovat.
+2. **Node-RED:** Settings → Integrations → Node-RED → **Enabled**. Otevřete `https://<adresa Cerba>:1881`
+   (nebo ve VRM: Venus OS Large → Node-RED).
+3. V Node-RED: menu ☰ → **Manage palette** → **Install** → hledat `wattery` → **Install**.
+4. Ve wattery: **Nastavení → Lokální spojení → Spárovat zařízení** — ukáže se kód (platí 15 minut).
+5. Uzel **wattery** (kategorie wattery) přetáhněte na plochu, dvakrát klikněte, vložte kód → **Done** → **Deploy**.
+   Pod uzlem se objeví zelené **čte · hh:mm** a ve wattery **Node-RED na Cerbu ● online**.
+
+## Stavy uzlu
+
+| Stav | Co znamená |
+|---|---|
+| zelená **čte · 14:05** | vše v pořádku, čas poslední synchronizace |
+| žlutá **zadejte párovací kód** | uzel ještě není spárovaný — vložte kód z aplikace |
+| žlutá **server nedostupný** | Cerbo nemá internet nebo server neodpovídá; zkouší znovu samo |
+| žlutá **GX: … zkusím znovu** | spojení s Cerbem (MQTT) se přerušilo; za 10 s znovu |
+| červená **odpojeno ve wattery — spárujte znovu** | spojení bylo v aplikaci odpojeno; vložte nový kód a Deploy |
+
+## Odebrání
+
+Smažte uzel a dejte **Deploy**, ve wattery u spojení klepněte na **✕**. Balíček odeberete v Manage palette.
+
+## English
+
+Read-only bridge from a Victron GX device (Venus OS Large, Node-RED) to the wattery energy platform. It reads the
+GX's local MQTT broker on `localhost` (no MQTT-on-LAN or GX password needed) and syncs the values to wattery over
+HTTPS. Pair it with a one-time code from the wattery app. Nothing is ever written to the GX (only the
+`R/<portal>/keepalive` request is published).
 
 ## Vývoj
 
@@ -21,6 +50,6 @@ node tools/headless.js --url … --code … --host … --port …   # jádro bez
 ```
 
 Jádro (`lib/core.js`, `lib/gx-mqtt.js`) je port čtecí části klienta pro Home Assistant
-(`wattery-ha/custom_components/wattery/edge.py`, `transport_mqtt_gx.py`) — držet stejně.
+([wattery-ha](https://github.com/K3iVi/wattery-ha): `edge.py`, `transport_mqtt_gx.py`) — držet stejně.
 
-MIT
+Licence MIT

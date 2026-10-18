@@ -1,0 +1,14 @@
+[
+  {
+    "id": "f1a0c0de00000001",
+    "type": "wattery",
+    "name": "wattery",
+    "server": "https://monitoring.wattery.cz",
+    "host": "127.0.0.1",
+    "port": 1883,
+    "kind": "nodered",
+    "x": 160,
+    "y": 80,
+    "wires": []
+  }
+]

@@ -1,15 +1,19 @@
 {
   "name": "node-red-contrib-wattery",
   "version": "0.1.1",
-  "description": "wattery — lokální spojení Victron GX (Cerbo) s platformou wattery přímo z Node-RED na Venus OS Large",
+  "description": "wattery — lokální spojení Victron GX (Cerbo) s platformou wattery přímo z Node-RED na Venus OS Large / Local connection of a Victron GX to wattery",
   "license": "MIT",
-  "keywords": ["node-red", "victron", "venus-os", "cerbo", "wattery"],
+  "author": "wattery (https://wattery.cz)",
+  "homepage": "https://spot.wattery.cz/navody/pripojeni-victron-cerbo",
+  "repository": { "type": "git", "url": "git+https://github.com/K3iVi/wattery-nodered.git" },
+  "bugs": { "url": "https://github.com/K3iVi/wattery-nodered/issues" },
+  "keywords": ["node-red", "victron", "venus-os", "cerbo", "gx", "energy", "wattery"],
   "engines": { "node": ">=18" },
   "node-red": {
     "version": ">=3.0.0",
     "nodes": { "wattery": "nodes/wattery.js" }
   },
-  "files": ["lib/", "nodes/", "README.md", "LICENSE"],
+  "files": ["lib/", "nodes/", "examples/", "README.md", "LICENSE"],
   "scripts": {
     "test": "node --test \"test/*.test.js\""
   }

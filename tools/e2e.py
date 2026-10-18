@@ -71,7 +71,7 @@ def snapshot(vsn):
 
 async def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--node', default=shutil.which('node') or r'C:\Users\petrk\tools\node\node.exe')
+    ap.add_argument('--node', default=shutil.which('node') or 'node')
     ap.add_argument('--seconds', type=float, default=25)
     a = ap.parse_args()
     t = int(time.time())
