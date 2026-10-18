@@ -84,7 +84,7 @@ async def main():
     print(f'hub {url}, GX simulátor :{broker.port}, portal {g.portal}, DB {store.DB_PATH}')
     proc = await asyncio.create_subprocess_exec(
         a.node, os.path.join(HERE, 'headless.js'), '--url', url, '--code', code, '--host', '127.0.0.1',
-        '--port', str(broker.port), '--kind', 'sim', '--seconds', str(a.seconds),
+        '--port', str(broker.port), '--kind', 'nodered', '--seconds', str(a.seconds),
         stdout=asyncio.subprocess.PIPE, cwd=ROOT)
     await asyncio.sleep(min(10.0, a.seconds / 2))
     write = edge_channel.send(vsn, {'kind': 'victron.write', 'values': {ev.vmq.DESS_PREFIX + 'Mode': 0}})
@@ -96,7 +96,7 @@ async def main():
     (raw, snap), clients = snapshot(vsn)
     dl = {it['key']: it['value'] for it in snap.get('dataList') or []}
     print('klient:', res)
-    check('párování kódem: klient na serveru (kind sim, caps jen mqtt)', len(clients) == 1
+    check('párování kódem: klient na serveru (kind nodered, caps jen mqtt)', len(clients) == 1
           and json.loads(clients[0]['caps_json'] or '{}').get('transports') == ['mqtt'], clients)
     check('klient online, plán mqtt přijat', res.get('status') == 'online' and res.get('items', 0) >= 5, res)
     check('stínový snímek: identita ze system/0/Serial ověřená, dataList s SOC a výkony',
