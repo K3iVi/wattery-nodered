@@ -33,8 +33,8 @@ function fakeServer(replies) {
   return { post, calls };
 }
 
-test('caps: jen mqtt, žádný profil zápisu (jen čtení)', () => {
-  assert.deepStrictEqual(clientCaps(), { proto: 2, transports: ['mqtt'], profiles: [], features: [] });
+test('caps: přenos mqtt, vestavěný profil victron-gx@1, pojistky', () => {
+  assert.deepStrictEqual(clientCaps(), { proto: 2, transports: ['mqtt'], profiles: ['victron-gx@1'], features: ['lease'] });
 });
 
 test('plán: jen platné položky mqtt (modbus a nesmysly pryč)', () => {

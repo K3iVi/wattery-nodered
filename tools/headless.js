@@ -2,7 +2,8 @@
 /**
  * Stejné jádro jako uzel, ale bez Node-RED — pro E2E (tools/e2e.py) a ladění:
  *   node tools/headless.js --url http://127.0.0.1:8099 --code ABCD-EFGH --host 127.0.0.1 --port 1883
- *                          [--password x] [--kind sim] [--seconds 20]
+ *                          [--password x] [--kind sim] [--seconds 20] [--control 1]
+ * `--control 1` = přepínač „Řízení z wattery“ zapnutý (zápis W/ do GX podle profilu) — jen proti simulátoru GX.
  * Na konci vypíše jeden řádek JSON se stavem (status, accepted, commands, published témata).
  */
 const { GxMqtt } = require('../lib/gx-mqtt');
@@ -18,11 +19,14 @@ function args() {
 
 async function main() {
   const a = args();
-  const gx = new GxMqtt({ host: a.host || '127.0.0.1', port: parseInt(a.port || '1883', 10), password: a.password || '' });
+  const control = a.control === '1';
+  const gx = new GxMqtt({ host: a.host || '127.0.0.1', port: parseInt(a.port || '1883', 10), password: a.password || '',
+                          writable: control });
   await gx.start();
   const log = (m) => process.stderr.write(`[wattery] ${m}\n`);
   const client = new EdgeClient({ post: makePost(a.url), transport: gx, version: 'nodered/headless', log,
                                   onStatus: (c) => log(`stav ${c.status}${c.lastError ? ' — ' + c.lastError : ''}`) });
+  client.setControl(control);
   const res = await client.pair(a.code, { kind: a.kind || 'nodered', label: 'headless' });
   log(`spárováno: klient ${res.clientId}, plán ${client.items.map((i) => i.name).join(', ')}`);
   const end = Date.now() + parseFloat(a.seconds || '20') * 1000;
@@ -40,6 +44,7 @@ async function main() {
   process.stdout.write(JSON.stringify({
     portal: gx.portal, status: client.status, revoked, accepted: client.lastAccepted, items: client.items.length,
     commandsDone: client.commandsDone, lastCommand: client.lastCommand, published: [...new Set(gx.published)],
+    profile: client.profileId, leases: Object.keys(client.leases), refreshes: client.refreshes,
     clientId: res.clientId,
   }) + '\n');
 }

@@ -1,8 +1,9 @@
 'use strict';
 /**
- * Uzel Node-RED „wattery“ — lokální spojení Victron GX ↔ wattery (NR1: jen čtení).
- * Čte broker GX na localhost (bez hesla), párování kódem z aplikace wattery, token v souboru v userDir
- * (kontext Node-RED je na Venus OS jen v paměti — NR0). Do GX nic nezapisuje.
+ * Uzel Node-RED „wattery“ — lokální spojení Victron GX ↔ wattery.
+ * Čte broker GX na localhost (bez hesla), párování kódem z aplikace wattery, token a stav pojistek v souboru v userDir
+ * (kontext Node-RED je na Venus OS jen v paměti — NR0). Do GX zapisuje jen se zaškrtnutým „Řízení z wattery“
+ * (výchozí vypnuto) a jen to, co dovolí profil zápisu (lib/profile.js, profiles/victron-gx@1.json).
  */
 const fs = require('fs');
 const path = require('path');
@@ -39,6 +40,7 @@ module.exports = function register(RED) {
     const host = config.host || '127.0.0.1';
     const port = parseInt(config.port, 10) || 1883;
     const kind = config.kind || 'nodered';
+    const control = config.control === true || config.control === 'true';
     let gx = null;
     let client = null;
     let loopTimer = null;                               // smyčka synchronizace
@@ -74,7 +76,9 @@ module.exports = function register(RED) {
     }
 
     function onStatus(c) {
-      if (c.status === ONLINE) status('green', `čte · ${hhmm(c.lastSyncAt)}${c.lastError ? ' · ' + c.lastError : ''}`);
+      if (c.status === ONLINE) {
+        status('green', `${control ? 'řízení' : 'čte'} · ${hhmm(c.lastSyncAt)}${c.lastError ? ' · ' + c.lastError : ''}`);
+      }
       else if (c.status === REVOKED) status('red', 'odpojeno ve wattery — spárujte znovu');
       else if (c.lastError) status('yellow', c.lastError);
     }
@@ -108,7 +112,7 @@ module.exports = function register(RED) {
     async function connect() {
       gxTimer = null;
       status('grey', 'připojuji se ke GX…');
-      const g = new GxMqtt({ host, port });
+      const g = new GxMqtt({ host, port, writable: control });
       gx = g;
       g.on('lost', (err) => {
         if (gx !== g) return;
@@ -131,8 +135,17 @@ module.exports = function register(RED) {
       if (diag.gxConnects > 1) node.log(`wattery: znovu připojeno ke GX ${g.portal}`);
       const key = `${server}|${gx.portal}`;
       const saved = loadState(RED)[key];
+      // Stav pojistek a profilu (přežije restart); token se ukládá zvlášť při párování.
+      const onPersist = (edge) => {
+        const st = loadState(RED);
+        if (!st[key]) return;
+        st[key].edge = edge;
+        try { saveState(RED, st); } catch (e) { node.warn(`wattery: stav se nepodařilo uložit: ${e.message}`); }
+      };
       client = client || new EdgeClient({ post: makePost(server, { userAgent: VERSION }), transport: gx, version: VERSION,
-                                          log: (m) => node.log(m), onStatus });
+                                          log: (m) => node.log(m), onStatus, sn: gx.portal,
+                                          state: saved && saved.edge, onPersist });
+      client.setControl(control);
       client.setTransport(gx);                          // po znovupřipojení GX nový přenos, stejný stav klienta
       if (client.token) {
         // už běží (jen nové spojení s GX)
@@ -153,7 +166,7 @@ module.exports = function register(RED) {
           return;
         }
       }
-      status('green', `GX ${gx.portal} — čtu`);
+      status('green', `GX ${gx.portal} — ${control ? 'čtu, řízení zapnuto' : 'čtu'}`);
       publishDiag();
       scheduleLoop(1);
     }

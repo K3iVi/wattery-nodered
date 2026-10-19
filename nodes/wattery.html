@@ -7,7 +7,8 @@
       server: { value: 'https://monitoring.wattery.cz', required: true },
       host: { value: '127.0.0.1', required: true },
       port: { value: 1883, required: true, validate: RED.validators.number() },
-      kind: { value: 'nodered' }
+      kind: { value: 'nodered' },
+      control: { value: false }
     },
     credentials: { code: { type: 'password' } },
     inputs: 0,
@@ -22,6 +23,11 @@
   <div class="form-row">
     <label for="node-input-code"><i class="fa fa-key"></i> Párovací kód</label>
     <input type="password" id="node-input-code" placeholder="ABCD-EFGH">
+  </div>
+  <div class="form-row">
+    <label for="node-input-control"><i class="fa fa-sliders"></i> Řízení</label>
+    <input type="checkbox" id="node-input-control" style="width: auto; vertical-align: top">
+    <span>Řízení z wattery (zápis do Cerba)</span>
   </div>
   <div class="form-row">
     <label for="node-input-name"><i class="fa fa-tag"></i> Název</label>
@@ -46,7 +52,11 @@
     <li>Vložte kód sem, klikněte <b>Done</b> a pak <b>Deploy</b>. Pod uzlem se ukáže stav, zelené
       <i>čte · čas</i> = vše v pořádku.</li>
   </ol>
-  <p>Ostatní pole nechte, jak jsou. Uzel čte broker MQTT Cerba na <code>localhost</code> (heslo není potřeba)
-     a <b>do Cerba nic nezapisuje</b>. Odpojit jde v aplikaci wattery (✕) nebo smazáním uzlu a Deploy.</p>
+  <p>Ostatní pole nechte, jak jsou. Uzel čte broker MQTT Cerba na <code>localhost</code> (heslo není potřeba).</p>
+  <h3>Řízení z wattery</h3>
+  <p>Ve výchozím stavu je vypnuté a uzel <b>do Cerba nic nezapisuje</b>. Zapněte ho, jen když se tak domluvíte
+     s wattery. Pak uzel zapisuje jen rozvrh Dynamic ESS, minimální SOC baterie a nabíječku EV, v mezích, které
+     má zabudované, a po každém zápisu ověří hodnotu v Cerbu. Vypnutím (a Deploy) se řízení okamžitě vrátí na VRM.</p>
+  <p>Odpojit jde v aplikaci wattery (✕) nebo smazáním uzlu a Deploy.</p>
   <p><a href="https://spot.wattery.cz/navody/pripojeni-victron-cerbo" target="_blank" rel="noopener">Návod s obrázky</a></p>
 </script>

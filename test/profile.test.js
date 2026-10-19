@@ -60,3 +60,9 @@ test('vestavěné profily: victron-gx@1 se načte, Mode jen 0/4, MinimumSocLimit
   assert.match(P.pathProblem(comp, 'settings/0/Settings/CGwacs/Hub4Mode', 1), /mimo profil/);
   assert.ok(P.persistent(comp, `${D}Mode`) && !P.persistent(comp, `${D}Schedule/3/Soc`));
 });
+
+test('balíček npm obsahuje profily (bez nich by uzel nemohl řídit)', () => {
+  const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
+  assert.ok(pkg.files.includes('profiles/') && pkg.files.includes('lib/'), pkg.files);
+  assert.strictEqual(path.relative(path.join(__dirname, '..'), P.PROFILES_DIR), 'profiles');
+});

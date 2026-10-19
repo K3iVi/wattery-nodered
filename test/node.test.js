@@ -31,7 +31,7 @@ function fakeHub() {
                 readPlan: [{ type: 'mqtt', name: 'live', everyS: 5, dev: PORTAL, paths: ['system/0/Dc/Battery/Soc'] }] };
       } else {
         hub.syncs.push({ auth: req.headers.authorization, body: b });
-        if (hub.revoke) { code = 401; out = { ok: false }; } else out = { ok: true, accepted: b.reads.length };
+        if (hub.revoke) { code = 401; out = { ok: false }; } else out = { ok: true, accepted: b.reads.length, ...(hub.extra ? hub.extra(b) : {}) };
       }
       res.writeHead(code, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify(out));
@@ -127,5 +127,45 @@ test('uzel: ztráta GX během běžící synchronizace → znovupřipojení, ž�
     await gx.stop();
     hub.server.close();
     fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('uzel: řízení zapnuté → ctl on, zápis W/ do GX s ozvěnou, pojistka uložená v userDir; vypnuté → nic', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wattery-nr-'));
+  const gx = await new FakeGx().start();
+  const hub = await fakeHub();
+  const MODE = 'settings/0/Settings/DynamicEss/Mode';
+  let sent = false;
+  hub.extra = (b) => {
+    const out = { profile: 'victron-gx@1', serverTime: Math.floor(Date.now() / 1000), control: 'on',
+                  leases: [{ id: 'L1', validUntil: Math.floor(Date.now() / 1000) + 600,
+                             onExpire: [{ type: 'mqtt', dev: PORTAL, op: 'write', values: [[MODE, 0]] }] }] };
+    if (!sent && b.client.ctl === 'on') { sent = true; out.commands = [{ id: 'c-1', type: 'mqtt', dev: PORTAL, op: 'write', values: [[MODE, 0]], expiresInS: 30 }]; }
+    return out;
+  };
+  const RED = fakeRED(dir);
+  const cfg = { server: hub.url, host: '127.0.0.1', port: String(gx.port), kind: 'nodered', __credentials: { code: 'ABCD-EFGH' } };
+  try {
+    const off = {};
+    RED.type.ctor.call(off, cfg);                        // výchozí: řízení vypnuté
+    assert.ok(await until(() => hub.syncs.length >= 2, 12000));
+    assert.ok(hub.syncs.every((x) => x.body.client.ctl === 'off'));
+    assert.ok(gx.clientTopics.every((t) => t === `R/${PORTAL}/keepalive`), 'bez řízení jen keepalive');
+    await close(off);
+
+    const on = {};
+    RED.type.ctor.call(on, { ...cfg, control: true, __credentials: {} });
+    assert.ok(await until(() => hub.syncs.some((x) => (x.body.results || []).some((r) => r.id === 'c-1')), 12000),
+              JSON.stringify(on.logs));
+    const r = hub.syncs.flatMap((x) => x.body.results || []).find((x) => x.id === 'c-1');
+    assert.deepStrictEqual([r.ok, r.echo], [true, { [MODE]: 0 }]);
+    assert.strictEqual(gx.tree[MODE], 0);
+    const st = JSON.parse(fs.readFileSync(path.join(dir, 'wattery-edge.json'), 'utf8'))[`${hub.url}|${PORTAL}`];
+    assert.deepStrictEqual([st.token, st.edge.profile, st.edge.leases[0].id], ['TOK', 'victron-gx@1', 'L1']);
+    assert.ok(on.statuses.some((x) => x.fill === 'green' && /řízení/.test(x.text)), JSON.stringify(on.statuses));
+    await close(on);
+  } finally {
+    await gx.stop();
+    await new Promise((res) => hub.server.close(() => res()));
   }
 });
