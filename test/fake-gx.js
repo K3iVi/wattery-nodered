@@ -1,5 +1,9 @@
 'use strict';
-/** Falešný broker GX pro testy (jako wattery-ha/tests/gx_sim.py): retained Serial, keepalive = přehled, heslo. */
+/**
+ * Falešný broker GX pro testy (jako wattery-ha/tests/gx_sim.py): retained Serial, keepalive = přehled, heslo.
+ * Zápis jako dbus-flashmq: `W/<portal>/<cesta>` {"value": v} změní existující cestu (neznámou ignoruje) a pošle `N/`;
+ * `R/<portal>/<cesta>` hodnotu znovu publikuje. `lagMs` = zpoždění zápisu (dbus), `reject` = cesty, které GX nepřijme.
+ */
 const net = require('net');
 const { matchFilter } = require('../lib/gx-mqtt');
 
@@ -24,7 +28,10 @@ const str = (s) => { const b = Buffer.from(s); const h = Buffer.alloc(2); h.writ
 const pkt = (head, body) => Buffer.concat([Buffer.from([head]), vlen(body.length), body]);
 
 class FakeGx {
-  constructor({ password = null, portal = PORTAL, tree = null } = {}) {
+  constructor({ password = null, portal = PORTAL, tree = null, lagMs = 0, reject = [] } = {}) {
+    this.lagMs = lagMs;
+    this.reject = new Set(reject);
+    this.writes = [];
     this.password = password;
     this.portal = portal;
     this.tree = tree || defaultTree();
@@ -107,6 +114,17 @@ class FakeGx {
       if (topic === `R/${this.portal}/keepalive`) {
         this.keepalives.push(payload);
         if (!payload.includes('suppress-republish')) for (const path of Object.keys(this.tree)) this._send(c, path);
+      } else if (topic.startsWith(`R/${this.portal}/`)) {
+        const path = topic.slice(this.portal.length + 3);
+        if (path in this.tree) this._send(c, path);
+      } else if (topic.startsWith(`W/${this.portal}/`)) {
+        const path = topic.slice(this.portal.length + 3);
+        let v;
+        try { v = JSON.parse(payload).value; } catch (e) { return; }
+        this.writes.push([path, v]);
+        if (!(path in this.tree) || this.reject.has(path)) return;
+        const apply = () => this.set(path, v);
+        if (this.lagMs) setTimeout(apply, this.lagMs); else apply();
       }
     } else if (t === 0xc0) {
       c.sock.write(pkt(0xd0, Buffer.alloc(0)));

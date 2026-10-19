@@ -71,3 +71,60 @@ test('GX: ztráta spojení → událost lost', async () => {
   const err = await lost;
   assert.ok(err && !c.connected);
 });
+
+const D = 'settings/0/Settings/DynamicEss/';
+
+test('GX zápis: bez writable nic (W/ ani R/<cesta>), dávka neprojde', async () => {
+  const b = await new FakeGx().start();
+  const c = new GxMqtt({ port: b.port });
+  try {
+    await c.start();
+    await assert.rejects(c.write([[`${D}Mode`, 0]]), /vypnutý/);
+    assert.throws(() => c._publish(`W/${PORTAL}/${D}Mode`, '{"value":0}', true), /není povolené/);
+    assert.throws(() => c._publish(`R/${PORTAL}/${D}Mode`, '', true), /není povolené/);
+    await settle();
+    assert.deepStrictEqual(b.writes, []);
+    assert.ok(b.clientTopics.every((t) => t === `R/${PORTAL}/keepalive`), b.clientTopics.join(','));
+  } finally {
+    c.close();
+    await b.stop();
+  }
+});
+
+test('GX zápis: W/ v pořadí, R/<cesta>, ozvěna N/ po zápisu (i se zpožděním dbus)', async () => {
+  const b = await new FakeGx({ lagMs: 300 }).start();
+  const c = new GxMqtt({ port: b.port, writable: true });
+  try {
+    await c.start();
+    const t0 = Date.now();
+    const echo = await c.write([[`${D}Schedule/0/Soc`, 90], [`${D}Mode`, 0]]);
+    assert.deepStrictEqual(echo, { [`${D}Schedule/0/Soc`]: 90, [`${D}Mode`]: 0 });
+    assert.ok(Date.now() - t0 >= 250 && Date.now() - t0 < 3000, `${Date.now() - t0} ms`);
+    assert.deepStrictEqual(b.writes, [[`${D}Schedule/0/Soc`, 90], [`${D}Mode`, 0]]);
+    assert.deepStrictEqual(b.tree[`${D}Mode`], 0);
+    const pub = b.clientTopics.filter((t) => t !== `R/${PORTAL}/keepalive`);
+    assert.deepStrictEqual(pub, [`W/${PORTAL}/${D}Schedule/0/Soc`, `W/${PORTAL}/${D}Mode`,
+                                 `R/${PORTAL}/${D}Schedule/0/Soc`, `R/${PORTAL}/${D}Mode`]);
+    // stejná hodnota znovu: GX změnu nepublikuje, ozvěnu dá R/<cesta>
+    assert.deepStrictEqual(await c.write([[`${D}Mode`, 0]]), { [`${D}Mode`]: 0 });
+  } finally {
+    c.close();
+    await b.stop();
+  }
+});
+
+test('GX zápis: GX hodnotu nepřijme → ozvěna se starou hodnotou po timeoutu; neznámá cesta chybí', async () => {
+  const b = await new FakeGx({ reject: [`${D}Mode`] }).start();
+  const c = new GxMqtt({ port: b.port, writable: true, echoTimeoutS: 0.5 });
+  try {
+    await c.start();
+    const echo = await c.write([[`${D}Mode`, 0], [`${D}Neni`, 1]]);
+    assert.deepStrictEqual(echo, { [`${D}Mode`]: 4 });
+    await assert.rejects(c.write([[`${D}Schedule/+/Soc`, 1]]), /neplatná položka/);
+    await assert.rejects(c.write([[`${D}Mode`, 0], [`${D}Mode`, 4]]), /neplatná položka/);
+    await assert.rejects(c.write([[`${D}Mode`, '0']]), /neplatná položka/);
+  } finally {
+    c.close();
+    await b.stop();
+  }
+});
