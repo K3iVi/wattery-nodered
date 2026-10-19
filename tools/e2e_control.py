@@ -6,8 +6,9 @@ z wattery-ha (`tests/gx_sim.py`). Ověří celou cestu, kterou bude platforma ř
   2. operace `victron.write` (rozvrh DESS: slot + Mode 4) → edge_channel → příkaz mqtt → W/ do GX → ozvěna N/ →
      server ji ověří (edge_victron.verify) → výsledek ok, GX má nové hodnoty,
   3. zápis mimo profil (Mode 1 = VRM) server do klienta vůbec nepošle (jde cloudem),
-  4. pojistka příkazu: server pošle lease s onExpire (Mode 0) → výpadek serveru (503, zkouška edge_cmd) → po platnosti
-     uzel sám vrátí Mode 0 → po obnovení pošle leaseReport → server ho zapíše do auditu a pojistku smaže.
+  4. pojistka příkazu: ověřený zápis rozvrhu → server sám vydá lease s onExpire Mode 0 (edge_victron.refresh_lease)
+     → výpadek serveru (503, zkouška edge_cmd) → po platnosti uzel sám vrátí Mode 0 → po obnovení pošle leaseReport
+     → server ho zapíše do auditu a pojistku smaže. (Platnost test zkrátí v DB na 6 s; v provozu LEASE_OFFLINE_S.)
 
 Spuštění (z kořene wattery-nodered; sourozenecká repa deye-monitor a wattery-ha vedle):
   python tools/e2e_control.py [--node C:\\cesta\\node.exe]
@@ -134,12 +135,19 @@ async def main():
         res2 = await asyncio.to_thread(p2.result)
         check('Mode 1 (VRM) mimo profil: server klientovi nepošle (cloud)', res2 is None and len(broker.writes) == n, (p2, res2))
 
-        # 4) pojistka: onExpire Mode 0 po výpadku serveru
-        lease = {'id': 'e2e-dess', 'onExpire': [{'type': 'mqtt', 'dev': g.portal, 'op': 'write', 'values': [[D + 'Mode', 0]]}]}
+        # 4) pojistka: server ji vydá sám po ověřeném zápisu rozvrhu (Mode 1 z kroku 3 tu předchozí zrušil)
+        p3 = edge_channel.send(vsn, ev.dess_op([('Schedule/1/Soc', 50)]), source='e2e')
+        res3 = await asyncio.to_thread(p3.result)
         with store._conn() as c:
-            c.execute("INSERT INTO edge_leases (client_id, lease_id, device_sn, op_kind, lease_json, valid_for, hard_until, "
-                      "created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                      (cl['id'], lease['id'], vsn, 'victron.write', json.dumps(lease), 6, None, int(time.time())))
+            row = c.execute("SELECT * FROM edge_leases WHERE client_id=?", (cl['id'],)).fetchall()
+        ls = json.loads(row[0]['lease_json']) if len(row) == 1 else {}
+        check('ověřený zápis slotu → server vydal pojistku s onExpire Mode 0 (platnost LEASE_OFFLINE_S)',
+              bool(res3 and res3.get('ok')) and ls.get('onExpire') == [{'type': 'mqtt', 'dev': g.portal, 'op': 'write',
+                                                                        'values': [[D + 'Mode', 0]]}]
+              and row[0]['valid_for'] == ev.LEASE_OFFLINE_S, ([dict(r) for r in row], res3))
+        lease = {'id': ls.get('id')}
+        with store._conn() as c:                           # zkouška: platnost 6 s místo hodiny
+            c.execute("UPDATE edge_leases SET valid_for=6 WHERE client_id=?", (cl['id'],))
         t_ins = int(time.time())
         await until(lambda: (client_row(vsn)[0]['last_seen_at'] or 0) > t_ins + 1, 15)   # uzel pojistku převezme
         check('před výpadkem je v GX rozvrh wattery (Mode 4)', broker.tree.get(D + 'Mode') == 4, broker.tree.get(D + 'Mode'))
@@ -154,7 +162,8 @@ async def main():
               ok and audit is not None and audit['ok'] == 1 and D + 'Mode' in (audit['result_json'] or ''),
               dict(audit) if audit else None)
         check('do GX šly jen W/ z příkazů a pojistky (žádný jiný zápis)', [w for w in broker.writes] ==
-              [(D + 'Schedule/0/Soc', 95), (D + 'Schedule/0/Duration', 3600), (D + 'Mode', 4), (D + 'Mode', 0)], broker.writes)
+              [(D + 'Schedule/0/Soc', 95), (D + 'Schedule/0/Duration', 3600), (D + 'Mode', 4),
+               (D + 'Schedule/1/Soc', 50), (D + 'Mode', 0)], broker.writes)
     finally:
         edge_cmd.set_fallback_test(client_row(vsn)[0]['id'], None) if client_row(vsn)[0] else None
         out, _ = await proc.communicate()
