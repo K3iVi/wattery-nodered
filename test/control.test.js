@@ -41,9 +41,10 @@ function fakeServer(handler) {
   return { post, calls };
 }
 
-function client({ srv, tr = fakeTransport(), clock, control = true, sn = PORTAL, state = null, onPersist = null }) {
+function client({ srv, tr = fakeTransport(), clock, control = true, sn = PORTAL, state = null, onPersist = null,
+                  log = () => {} }) {
   const sleeps = [];
-  const c = new EdgeClient({ post: srv.post, transport: tr, version: 'nodered/test', clock, sn, state, onPersist,
+  const c = new EdgeClient({ post: srv.post, transport: tr, version: 'nodered/test', clock, sn, state, onPersist, log,
                              sleep: async (s) => { sleeps.push(s); } });
   c.start('T', PLAN, 10);
   c.setControl(control);
@@ -92,6 +93,33 @@ test('zápis: v profilu → W/ a ozvěna; mimo profil / Mode 1 / bez profilu / c
   const c3 = client({ srv: srv3, clock: () => t, sn: 'abcdef000001' });   // token spárovaný s jiným GX
   await c3.tick();
   assert.match(srv3.calls[1].results[0].err, /identita GX neověřená/);
+});
+
+test('nesoulad profilu: server pošle profil, který uzel nemá (victron-gx@2) → jen čtení, hláška v logu, nic do GX', async () => {
+  let t = 1000;
+  const logs = [];
+  const srv = fakeServer((b, n) => {
+    if (n === 1) return ok({ profile: 'victron-gx@2', commands: [write('c-1', [[MODE, 0]])] });
+    if (n === 2) return ok({ profile: 'victron-gx@2' });
+    if (n === 3) return ok({ commands: [write('c-2', [[MODE, 0]])] });     // server zpět na @1
+    return ok();
+  });
+  const tr = fakeTransport();
+  const c = client({ srv, tr, clock: () => t, log: (m) => logs.push(String(m)) });
+  assert.deepStrictEqual(c.caps.profiles, ['victron-gx@1'], 'caps nabízí jen vestavěné profily');
+  await c.tick();
+  assert.strictEqual(c.profileId, null);
+  assert.ok(logs.some((m) => /victron-gx@2 v uzlu není/.test(m)), logs);
+  assert.match(srv.calls[1].results[0].err, /jen ke čtení/);
+  assert.deepStrictEqual(tr.writes, [], 'nic do GX');
+  t += 1; await c.tick();
+  assert.strictEqual(c.profileId, 'victron-gx@1', 'server zpět na známý profil → řízení zase jde');
+  const res2 = srv.calls.flatMap((b) => b.results || []).filter((r) => r.id === 'c-2');
+  assert.deepStrictEqual(res2.map((r) => r.ok), [true]);
+  assert.deepStrictEqual(tr.writes, [[[MODE, 0]]]);
+  const old = new EdgeClient({ post: srv.post, transport: fakeTransport(), version: 'x', clock: () => t, sn: PORTAL,
+                               state: { profile: 'victron-gx@2' } });
+  assert.strictEqual(old.profileId, null, 'uložený neznámý profil se po restartu nenačte');
 });
 
 test('zápis: limity profilu (6/min, trvalá nastavení 12/den), odstup 1 s, prošlý příkaz', async () => {
