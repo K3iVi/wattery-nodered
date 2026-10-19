@@ -9,7 +9,6 @@ z wattery-ha (`tests/gx_sim.py`). Ověří celou cestu, kterou bude platforma ř
   4. pojistka příkazu: server pošle lease s onExpire (Mode 0) → výpadek serveru (503, zkouška edge_cmd) → po platnosti
      uzel sám vrátí Mode 0 → po obnovení pošle leaseReport → server ho zapíše do auditu a pojistku smaže.
 
-DOČASNĚ: 'nodered' v edge_cmd.CONTROL_KINDS doplní test sám (dokud ho nepřidá okno A do jádra).
 Spuštění (z kořene wattery-nodered; sourozenecká repa deye-monitor a wattery-ha vedle):
   python tools/e2e_control.py [--node C:\\cesta\\node.exe]
 """
@@ -88,8 +87,7 @@ async def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--node', default=shutil.which('node') or 'node')
     a = ap.parse_args()
-    if 'nodered' not in edge_cmd.CONTROL_KINDS:          # DOČASNĚ — do jádra doplní okno A
-        edge_cmd.CONTROL_KINDS = (*edge_cmd.CONTROL_KINDS, 'nodered')
+    assert 'nodered' in edge_cmd.CONTROL_KINDS, 'deye-monitor bez řízení nodered (potřeba 16bcd80+)'
     t = int(time.time())
     g, vsn, code = seed(t)
     tree = dict(g.values)
