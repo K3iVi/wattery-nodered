@@ -29,9 +29,10 @@ baterie a nabíječky EV. Nic jiného uzel do Cerba nezapíše — ani když by 
 - Řízení musí být zapnuté **na obou stranách**: v uzlu i ve wattery u spojení.
 - Každý zápis uzel ověří zpětným přečtením z Cerba; wattery dostane jen ověřený výsledek.
 - Limity zápisů (za minutu, za hodinu, trvalá nastavení za den) a mezera mezi zápisy jsou v profilu.
-- **Pojistka:** když server přestane odpovídat, uzel po uplynutí platnosti sám vrátí řízení Victronu
-  (Dynamic ESS Mode 0 = VRM) a po obnovení spojení to wattery nahlásí.
-- Vypnutím volby a **Deploy** vrátíte řízení VRM okamžitě.
+- **Pojistka:** když se uzel se serverem wattery dlouho nespojí (dnes 1 hodinu), sám vypne Dynamic ESS
+  (Mode 0) — Cerbo pak jede podle vašeho vlastního nastavení ESS — a po obnovení spojení to wattery nahlásí.
+- Vypnutím volby a **Deploy** uzel okamžitě přestane do Cerba zapisovat. Rozvrh, který už v Cerbu je, doběhne;
+  Dynamic ESS můžete kdykoli vypnout přímo v Cerbu (nastavení ESS → Dynamic ESS).
 
 ## Stavy uzlu
 
@@ -55,7 +56,8 @@ GX's local MQTT broker on `localhost` (no MQTT-on-LAN or GX password needed) and
 HTTPS. Pair it with a one-time code from the wattery app. By default it is read-only (only the
 `R/<portal>/keepalive` request is published). With the opt-in **control** option (0.2+) wattery may write the
 paths allowed by the `victron-gx@1` profile (Dynamic ESS schedule, minimum SOC, EV chargers); every write is
-verified by read-back, rate-limited, and protected by leases that hand control back to VRM if the server is lost.
+verified by read-back and rate-limited; if the node loses the wattery server for too long (1 hour today), it switches
+Dynamic ESS off (Mode 0) so the GX falls back to the owner's own ESS settings.
 
 ## Vývoj
 

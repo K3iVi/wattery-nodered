@@ -56,7 +56,9 @@
   <h3>Řízení z wattery</h3>
   <p>Ve výchozím stavu je vypnuté a uzel <b>do Cerba nic nezapisuje</b>. Zapněte ho, jen když se tak domluvíte
      s wattery. Pak uzel zapisuje jen rozvrh Dynamic ESS, minimální SOC baterie a nabíječku EV, v mezích, které
-     má zabudované, a po každém zápisu ověří hodnotu v Cerbu. Vypnutím (a Deploy) se řízení okamžitě vrátí na VRM.</p>
+     má zabudované, a po každém zápisu ověří hodnotu v Cerbu. Když se se serverem wattery dlouho nespojí, sám vypne
+     Dynamic ESS a Cerbo jede podle vašeho nastavení ESS. Vypnutím (a Deploy) uzel okamžitě přestane zapisovat;
+     rozvrh, který už v Cerbu je, doběhne.</p>
   <p>Odpojit jde v aplikaci wattery (✕) nebo smazáním uzlu a Deploy.</p>
   <p><a href="https://spot.wattery.cz/navody/pripojeni-victron-cerbo" target="_blank" rel="noopener">Návod s obrázky</a></p>
 </script>
